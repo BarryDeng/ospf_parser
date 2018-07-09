@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 
 #include "attack_origin.h"
+#include "topo.h"
 
 #define PROGNAME double-lsa
 #define MAX_TRACE_NUM 65536
@@ -17,6 +18,7 @@
 
 #define MAXLINE 65536
 #define PORT 8888
+#define MAX_NEIGHBOR 10
 
 int next_begin;
 
@@ -43,8 +45,10 @@ struct detect_model
             AS_EXTERNAL_LSA = 5
         } lsa_type; // LSA类型
         char lsa_id[16]; // LSA-ID
-	char neigh_id[16]; // Neighbor Network-ID
-	char neigh_interface[16]; // Neighbor Interface Address
+
+	int neigh_num; // Neighbor Number
+	char neigh_id[16][MAX_NEIGHBOR]; // Neighbor Network-ID
+	char neigh_interface[16][MAX_NEIGHBOR]; // Neighbor Interface Address
     } LSAs[MAX_LSA_NUM];
 
 } traces[MAX_TRACE_NUM];
@@ -205,25 +209,24 @@ void read_from_trace(char* line, int len)
                     }
                 }
                 break;
-	    case 12:
-	    case 14:
-		printf("TEST: %s\n", token);
-		reg_str = reg_match("Neighbor Network-ID: ([0-9.]+), Interface Address: ([0-9.]+)", token, 1);
-                if (reg_str != NULL)
-                {
-                    strncpy(temp->LSAs[0].neigh_id, reg_str, 16);
-                }
-		reg_str = reg_match("Neighbor Network-ID: ([0-9.]+), Interface Address: ([0-9.]+)", token, 2);
-		if (reg_str != NULL)
-                {
-                    strncpy(temp->LSAs[0].neigh_interface, reg_str, 16);
-                }
-
-		break;
             default:
                 break;
 
         }
+	if (index >= 12 && (index - 12) % 2 == 0) 
+	{
+		reg_str = reg_match("Neighbor Network-ID: ([0-9.]+), Interface Address: ([0-9.]+)", token, 1);
+                if (reg_str != NULL)
+                {
+                    strncpy(temp->LSAs[0].neigh_id[temp->LSAs[0].neigh_num], reg_str, 16);
+                }
+		reg_str = reg_match("Neighbor Network-ID: ([0-9.]+), Interface Address: ([0-9.]+)", token, 2);
+		if (reg_str != NULL)
+                {
+                    strncpy(temp->LSAs[0].neigh_interface[temp->LSAs[0].neigh_num++], reg_str, 16);
+                }
+	}
+
         // puts(token);
         token = strtok(NULL, ";");
         index++;
@@ -455,8 +458,30 @@ void is_bonus(struct detect_model * temp)
 		            }
                     }
                 }
+}
 
-	
+void is_neigh_valid(struct detect_model * temp)
+{
+	if (temp->LSAs[0].neigh_num)
+	{
+		for (int i = 0; i < temp->LSAs[0].neigh_num; ++i)
+		{
+			int found = 0;
+			for (int j = 0; j < sizeof(topo) / sizeof(topo[0]); ++j)
+			{
+				if (!strcmp(temp->LSAs[0].lsa_id, topo[j][0]) &&
+						!strcmp(temp->LSAs[0].neigh_id[i], topo[j][1]) &&
+						!strcmp(temp->LSAs[0].neigh_interface[i], topo[j][2]))
+				{
+					found++;
+				}
+			}
+			if (!found)
+			{
+				printf("Router-id %s, Neighbor-id %s, Neighbor-interface %s is invalid!\n", temp->LSAs[0].lsa_id, temp->LSAs[0].neigh_id[i], temp->LSAs[0].neigh_interface[i]);
+			}
+		}
+	}
 }
 
 void udp_mode() 
@@ -487,6 +512,9 @@ void udp_mode()
         printf("%s\n", mesg);
         // sendto(sockfd, mesg, n, 0, (struct sockaddr *)&cliaddr, len);
         read_from_trace(mesg, len);
+	
+	is_neigh_valid(&traces[trace_num - 1]);
+
 	is_bonus(&traces[trace_num - 1]);
         for (int i = next_begin; i < trace_num; ++i)
         {
@@ -525,11 +553,15 @@ int main(int argc, char* argv[])
         {
             // printf("%s\n", line);
             read_from_trace(line, len);
-        }
+	    is_neigh_valid(&traces[trace_num - 1]);
 
-        for (int i = next_begin; i < trace_num; ++i)
-        {
-            if(detect(i)) break;
+	    is_bonus(&traces[trace_num - 1]);
+        
+		for (int i = next_begin; i < trace_num; ++i)
+		{
+		    if(detect(i)) break;
+		}
+ 
         }
 
         free(line);
