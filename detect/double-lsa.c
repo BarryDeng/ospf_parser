@@ -45,6 +45,10 @@ struct detect_model
             AS_EXTERNAL_LSA = 5
         } lsa_type; // LSA类型
         char lsa_id[16]; // LSA-ID
+	
+	int stub_num; // Stub Number
+	char stub_id[16][MAX_NEIGHBOR]; // Stub Network
+	char stub_mask[16][MAX_NEIGHBOR]; // Stub Mask
 
 	int neigh_num; // Neighbor Number
 	char neigh_id[16][MAX_NEIGHBOR]; // Neighbor Network-ID
@@ -215,6 +219,17 @@ void read_from_trace(char* line, int len)
         }
 	if (index >= 12 && (index - 12) % 2 == 0) 
 	{
+		reg_str = reg_match("Stub Network: ([0-9.]+), Mask: ([0-9.]+)", token, 1);
+                if (reg_str != NULL)
+                {
+                    strncpy(temp->LSAs[0].stub_id[temp->LSAs[0].stub_num], reg_str, 16);
+                }
+		reg_str = reg_match("Stub Network: ([0-9.]+), Mask: ([0-9.]+)", token, 2);
+		if (reg_str != NULL)
+                {
+                    strncpy(temp->LSAs[0].stub_mask[temp->LSAs[0].stub_num++], reg_str, 16);
+                }
+
 		reg_str = reg_match("Neighbor Network-ID: ([0-9.]+), Interface Address: ([0-9.]+)", token, 1);
                 if (reg_str != NULL)
                 {
@@ -233,7 +248,15 @@ void read_from_trace(char* line, int len)
     } 
 
 #ifdef DEBUG
-    printf("%ld %s %s %s %d %d %x %s NEW: %s %s\n", temp->time.tv_sec, temp->interface_name, temp->ip_src, temp->ip_dst, temp->ospf_type, temp->LSAs[0].lsa_type, temp->LSAs[0].seq, temp->LSAs[0].lsa_id, temp->LSAs[0].neigh_id, temp->LSAs[0].neigh_interface);
+    printf("%ld %s %s %s %d %d %x %s\n", temp->time.tv_sec, temp->interface_name, temp->ip_src, temp->ip_dst, temp->ospf_type, temp->LSAs[0].lsa_type, temp->LSAs[0].seq, temp->LSAs[0].lsa_id);
+    for (int _i = 0; _i < temp->LSAs[0].stub_num; ++_i)
+    {
+	    printf("Stub %d: %s %s\n", _i, temp->LSAs[0].stub_id[_i], temp->LSAs[0].stub_mask[_i]);
+    }    
+    for (int _i = 0; _i < temp->LSAs[0].neigh_num; ++_i)
+    {
+	    printf("Neigh %d: %s %s\n", _i, temp->LSAs[0].neigh_id[_i], temp->LSAs[0].neigh_interface[_i]);
+    } 
 #endif
 
     trace_num++;
